@@ -1,0 +1,6 @@
+{
+  "name": "Mivo Logistics",
+  "description": "Premium multi-role enterprise logistics and fleet booking application with live AI intelligence and route optimization dashboards.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
