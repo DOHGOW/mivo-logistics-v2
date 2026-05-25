@@ -204,25 +204,30 @@ fun OnboardingScreenLayout(viewModel: LogisticsViewModel) {
                     contentAlignment = Alignment.Center
                 ) {
                     Canvas(modifier = Modifier.fillMaxSize()) {
-                        val width = size.width
-                        val height = size.height
-                        
-                        // Futuristic design elements inside local canvas
-                        drawCircle(
-                            color = Color.White.copy(alpha = 0.05f),
-                            radius = width * 0.4f,
-                            center = Offset(width * 0.5f, height * 0.5f)
-                        )
-                        drawCircle(
-                            color = Color.White.copy(alpha = 0.03f),
-                            radius = width * 0.6f,
-                            center = Offset(width * 0.5f, height * 0.5f)
-                        )
-                        
-                        // Decorative floating particles
-                        drawCircle(color = Color.White.copy(alpha = 0.08f), radius = 10f, center = Offset(width * 0.15f, height * 0.25f))
-                        drawCircle(color = Color.White.copy(alpha = 0.08f), radius = 6f, center = Offset(width * 0.85f, height * 0.35f))
-                        drawCircle(color = Color.White.copy(alpha = 0.06f), radius = 14f, center = Offset(width * 0.25f, height * 0.75f))
+                        try {
+                            val width = size.width
+                            val height = size.height
+                            if (width > 0f && height > 0f) {
+                                // Futuristic design elements inside local canvas
+                                drawCircle(
+                                    color = Color.White.copy(alpha = 0.05f),
+                                    radius = width * 0.4f,
+                                    center = Offset(width * 0.5f, height * 0.5f)
+                                )
+                                drawCircle(
+                                    color = Color.White.copy(alpha = 0.03f),
+                                    radius = width * 0.6f,
+                                    center = Offset(width * 0.5f, height * 0.5f)
+                                )
+                                
+                                // Decorative floating particles
+                                drawCircle(color = Color.White.copy(alpha = 0.08f), radius = 10f, center = Offset(width * 0.15f, height * 0.25f))
+                                drawCircle(color = Color.White.copy(alpha = 0.08f), radius = 6f, center = Offset(width * 0.85f, height * 0.35f))
+                                drawCircle(color = Color.White.copy(alpha = 0.06f), radius = 14f, center = Offset(width * 0.25f, height * 0.75f))
+                            }
+                        } catch (e: Exception) {
+                            // Suppress canvas rendering issues on early frames
+                        }
                     }
 
                     // Native central glowing graphic representation based on step
@@ -584,16 +589,30 @@ fun RoleSelectionScreenLayout(viewModel: LogisticsViewModel) {
 @Composable
 fun AuthScreenLayout(viewModel: LogisticsViewModel) {
     val role by viewModel.currentRole.collectAsState()
+    var isRegisterState by remember { mutableStateOf(false) }
+
+    var nameText by remember { mutableStateOf("") }
     var emailText by remember { mutableStateOf("") }
     var passwordText by remember { mutableStateOf("") }
 
-    // Preset testing emails based on role Selection
-    LaunchedEffect(role) {
-        emailText = when (role) {
-            UserRole.CUSTOMER -> "shipper.terminal@mivo.logistics"
-            UserRole.DRIVER -> "vance.highway@mivo.logistics"
-            UserRole.FLEET_OWNER -> "fleet.nexus@mivo.logistics"
-            UserRole.DISPATCH_ADMIN -> "dispatcher.alpha@mivo.logistics"
+    var statusText by remember { mutableStateOf("") }
+    var statusIsError by remember { mutableStateOf(false) }
+
+    // Preset testing emails based on role selection
+    LaunchedEffect(role, isRegisterState) {
+        statusText = ""
+        if (!isRegisterState) {
+            emailText = when (role) {
+                UserRole.CUSTOMER -> "shipper.terminal@mivo.logistics"
+                UserRole.DRIVER -> "vance.highway@mivo.logistics"
+                UserRole.FLEET_OWNER -> "fleet.nexus@mivo.logistics"
+                UserRole.DISPATCH_ADMIN -> "dispatcher.alpha@mivo.logistics"
+            }
+            passwordText = "12345"
+        } else {
+            nameText = ""
+            emailText = ""
+            passwordText = ""
         }
     }
 
@@ -604,11 +623,19 @@ fun AuthScreenLayout(viewModel: LogisticsViewModel) {
     ) {
         // Decorative soft dynamic amber vector accent
         Canvas(modifier = Modifier.fillMaxSize()) {
-            drawCircle(
-                color = PrimaryOrange.copy(alpha = 0.08f),
-                radius = 280.dp.toPx(),
-                center = Offset(size.width, 0f)
-            )
+            try {
+                val circleRadius = 280.dp.toPx()
+                val width = size.width
+                if (width > 0f && !circleRadius.isNaN() && !circleRadius.isInfinite()) {
+                    drawCircle(
+                        color = PrimaryOrange.copy(alpha = 0.08f),
+                        radius = circleRadius,
+                        center = Offset(width, 0f)
+                    )
+                }
+            } catch (e: Exception) {
+                // Safeguard canvas rendering
+            }
         }
 
         Column(
@@ -646,14 +673,74 @@ fun AuthScreenLayout(viewModel: LogisticsViewModel) {
             )
 
             Text(
-                text = "Multi-tenant verification for ${role.displayName}",
+                text = "Verification for ${role.displayName}",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
                 color = PrimaryOrange,
                 modifier = Modifier.padding(top = 4.dp)
             )
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Sliding Selection Row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFE2E8F0), RoundedCornerShape(12.dp))
+                    .padding(4.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (!isRegisterState) PrimaryOrange else Color.Transparent)
+                        .clickable { isRegisterState = false }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "Sign In Gate",
+                        color = if (!isRegisterState) Color.White else DarkText,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isRegisterState) PrimaryOrange else Color.Transparent)
+                        .clickable { isRegisterState = true }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "Secure Sign Up",
+                        color = if (isRegisterState) Color.White else DarkText,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            if (isRegisterState) {
+                OutlinedTextField(
+                    value = nameText,
+                    onValueChange = { nameText = it },
+                    label = { Text("Company Name / Driver Name") },
+                    leadingIcon = { Icon(Icons.Default.Person, null) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = PrimaryOrange,
+                        focusedLabelColor = PrimaryOrange
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+            }
 
             OutlinedTextField(
                 value = emailText,
@@ -684,26 +771,51 @@ fun AuthScreenLayout(viewModel: LogisticsViewModel) {
                 )
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            if (!isRegisterState) {
+                Spacer(modifier = Modifier.height(12.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
-            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    Text(
+                        text = "Sync Device Bio-ID",
+                        fontSize = 13.sp,
+                        color = PrimaryOrange,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable { }
+                    )
+                }
+            }
+
+            if (statusText.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = "Sync Device Bio-ID",
-                    fontSize = 13.sp,
-                    color = PrimaryOrange,
+                    text = statusText,
+                    color = if (statusIsError) ErrorRed else SuccessGreen,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clickable { }
+                    fontSize = 13.sp
                 )
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             GradientActionButton(
-                text = "Authenticate Terminal Connection",
-                onClick = { viewModel.authenticate(emailText) }
+                text = if (isRegisterState) "Create Local Database Profile" else "Authenticate Terminal Connection",
+                onClick = {
+                    statusText = ""
+                    if (isRegisterState) {
+                        viewModel.register(nameText, emailText, passwordText, role) { success, msg ->
+                            statusIsError = !success
+                            statusText = msg
+                        }
+                    } else {
+                        viewModel.authenticate(emailText, passwordText) { success, msg ->
+                            statusIsError = !success
+                            statusText = msg
+                        }
+                    }
+                }
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -740,51 +852,11 @@ fun CustomerDashboardLayout(viewModel: LogisticsViewModel) {
     val selectedTruck by viewModel.selectedTruck.collectAsState()
     val walletBal by viewModel.walletBalance.collectAsState()
 
-    var activeTab by remember { mutableStateOf(0) }
-
-    Scaffold(
-        bottomBar = {
-            NavigationBar(
-                containerColor = Color.White,
-                tonalElevation = 8.dp
-            ) {
-                NavigationBarItem(
-                    selected = (activeTab == 0),
-                    onClick = { activeTab = 0; viewModel.navigateTo(NavigationScreen.DASHBOARD_CUSTOMER) },
-                    icon = { Icon(Icons.Default.LocalShipping, null) },
-                    label = { Text("Book Truck") },
-                    colors = NavigationBarItemDefaults.colors(selectedIconColor = PrimaryOrange, indicatorColor = PrimaryOrange.copy(alpha = 0.12f))
-                )
-                NavigationBarItem(
-                    selected = (activeTab == 1),
-                    onClick = { activeTab = 1; viewModel.navigateTo(NavigationScreen.WALLET) },
-                    icon = { Icon(Icons.Default.AccountBalanceWallet, null) },
-                    label = { Text("Wallet") },
-                    colors = NavigationBarItemDefaults.colors(selectedIconColor = PrimaryOrange, indicatorColor = PrimaryOrange.copy(alpha = 0.12f))
-                )
-                NavigationBarItem(
-                    selected = (activeTab == 2),
-                    onClick = { activeTab = 2; viewModel.navigateTo(NavigationScreen.CHAT_SUPPORT) },
-                    icon = { Icon(Icons.Default.Chat, null) },
-                    label = { Text("AI Assist") },
-                    colors = NavigationBarItemDefaults.colors(selectedIconColor = PrimaryOrange, indicatorColor = PrimaryOrange.copy(alpha = 0.12f))
-                )
-                NavigationBarItem(
-                    selected = (activeTab == 3),
-                    onClick = { activeTab = 3; viewModel.navigateTo(NavigationScreen.HISTORY) },
-                    icon = { Icon(Icons.Default.History, null) },
-                    label = { Text("History") },
-                    colors = NavigationBarItemDefaults.colors(selectedIconColor = PrimaryOrange, indicatorColor = PrimaryOrange.copy(alpha = 0.12f))
-                )
-            }
-        }
-    ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .background(BackgroundLight)
-        ) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(BackgroundLight)
+    ) {
             // Visual simulated map as background of upper half
             Box(
                 modifier = Modifier
@@ -816,13 +888,20 @@ fun CustomerDashboardLayout(viewModel: LogisticsViewModel) {
                         }
                     }
 
-                    Box(
-                        modifier = Modifier
-                            .background(Color.White.copy(alpha = 0.9f), CircleShape)
-                            .clickable { viewModel.logout() }
-                            .padding(8.dp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Default.ExitToApp, "Logout", tint = ErrorRed, modifier = Modifier.size(18.dp))
+                        FirebaseStatusChip()
+
+                        Box(
+                            modifier = Modifier
+                                .background(Color.White.copy(alpha = 0.9f), CircleShape)
+                                .clickable { viewModel.logout() }
+                                .padding(8.dp)
+                        ) {
+                            Icon(Icons.Default.ExitToApp, "Logout", tint = ErrorRed, modifier = Modifier.size(18.dp))
+                        }
                     }
                 }
 
@@ -1003,7 +1082,6 @@ fun CustomerDashboardLayout(viewModel: LogisticsViewModel) {
                 Spacer(modifier = Modifier.height(24.dp))
             }
         }
-    }
 }
 
 @Composable

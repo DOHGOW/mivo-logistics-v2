@@ -191,147 +191,163 @@ fun SimulatedInteractiveMap(
             .fillMaxSize()
             .background(Color(0xFFE2EBF0))
     ) {
-        val width = size.width
-        val height = size.height
+        try {
+            val width = size.width
+            val height = size.height
 
-        // Define route landmarks explicitly
-        val startOffset = Offset(width * 0.18f, height * 0.72f)
-        val bendOffset1 = Offset(width * 0.42f, height * 0.48f)
-        val bendOffset2 = Offset(width * 0.60f, height * 0.68f)
-        val endOffset = Offset(width * 0.82f, height * 0.24f)
+            if (width > 0f && height > 0f) {
+                val safeProgress = if (progress.isNaN() || progress.isInfinite()) 0.0f else progress.coerceIn(0.0f, 1.0f)
 
-        // Draw basic map grid lines (highway lanes simulation)
-        val strokeMapGrid = Stroke(width = 2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(20f, 30f), 0f))
-        for (i in 1..4) {
-            drawLine(
-                color = Color.LightGray.copy(alpha = 0.45f),
-                start = Offset(0f, height * (i * 0.22f)),
-                end = Offset(width, height * (i * 0.22f)),
-                strokeWidth = 1.dp.toPx()
-            )
-            drawLine(
-                color = Color.LightGray.copy(alpha = 0.45f),
-                start = Offset(width * (i * 0.20f), 0f),
-                end = Offset(width * (i * 0.20f), height),
-                strokeWidth = 1.dp.toPx()
-            )
-        }
+                // Define route landmarks explicitly
+                val startOffset = Offset(width * 0.18f, height * 0.72f)
+                val bendOffset1 = Offset(width * 0.42f, height * 0.48f)
+                val bendOffset2 = Offset(width * 0.60f, height * 0.68f)
+                val endOffset = Offset(width * 0.82f, height * 0.24f)
 
-        // Procedural highway curves representation
-        val routePath = Path().apply {
-            moveTo(startOffset.x, startOffset.y)
-            cubicTo(bendOffset1.x, bendOffset1.y, bendOffset2.x, bendOffset2.y, endOffset.x, endOffset.y)
-        }
+                // Draw basic map grid lines (highway lanes simulation)
+                for (i in 1..4) {
+                    drawLine(
+                        color = Color.LightGray.copy(alpha = 0.45f),
+                        start = Offset(0f, height * (i * 0.22f)),
+                        end = Offset(width, height * (i * 0.22f)),
+                        strokeWidth = 1.dp.toPx()
+                    )
+                    drawLine(
+                        color = Color.LightGray.copy(alpha = 0.45f),
+                        start = Offset(width * (i * 0.20f), 0f),
+                        end = Offset(width * (i * 0.20f), height),
+                        strokeWidth = 1.dp.toPx()
+                    )
+                }
 
-        // Draw main highway route trunk
-        drawPath(
-            path = routePath,
-            color = Color.White,
-            style = Stroke(width = 8.dp.toPx(), cap = StrokeCap.Round)
-        )
-        drawPath(
-            path = routePath,
-            color = PrimaryOrange.copy(alpha = 0.75f),
-            style = Stroke(
-                width = 4.dp.toPx(),
-                cap = StrokeCap.Round,
-                pathEffect = PathEffect.dashPathEffect(floatArrayOf(15f, 15f), 0f)
-            )
-        )
+                // Procedural highway curves representation
+                val routePath = Path().apply {
+                    moveTo(startOffset.x, startOffset.y)
+                    cubicTo(bendOffset1.x, bendOffset1.y, bendOffset2.x, bendOffset2.y, endOffset.x, endOffset.y)
+                }
 
-        // Draw the visual completion trail
-        if (progress > 0.0f) {
-            val progressPath = Path()
-            val measure = PathMeasure()
-            measure.setPath(routePath, false)
-            val sublength = measure.length * progress
-            measure.getSegment(0f, sublength, progressPath, true)
-
-            drawPath(
-                path = progressPath,
-                color = SuccessGreen,
-                style = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round)
-            )
-        }
-
-        // Draw pickup depot radius rings
-        drawCircle(
-            color = PrimaryOrange.copy(alpha = 0.15f),
-            center = startOffset,
-            radius = 35.dp.toPx()
-        )
-        drawCircle(
-            color = PrimaryOrange,
-            center = startOffset,
-            radius = 8.dp.toPx()
-        )
-
-        // Draw destination pulsing rings
-        drawCircle(
-            color = SuccessGreen.copy(alpha = (1f - (pulseRadius / 28f)).coerceIn(0f, 0.4f)),
-            center = endOffset,
-            radius = pulseRadius * 2.dp.toPx()
-        )
-        drawCircle(
-            color = SuccessGreen,
-            center = endOffset,
-            radius = 8.dp.toPx()
-        )
-
-        // Vector labels for start & end
-        translate(left = startOffset.x - 14.dp.toPx(), top = startOffset.y - 32.dp.toPx()) {
-            with(startIconPainter) {
-                draw(size = Size(28.dp.toPx(), 28.dp.toPx()), colorFilter = ColorFilter.tint(PrimaryOrange))
-            }
-        }
-
-        translate(left = endOffset.x - 10.dp.toPx(), top = endOffset.y - 32.dp.toPx()) {
-            with(destIconPainter) {
-                draw(size = Size(26.dp.toPx(), 26.dp.toPx()), colorFilter = ColorFilter.tint(SuccessGreen))
-            }
-        }
-
-        // Simulated secondary fleet trucks active (geographic clustering)
-        if (showNearbyVehicles) {
-            val activeTruck1 = Offset(width * 0.30f, height * 0.22f)
-            val activeTruck2 = Offset(width * 0.75f, height * 0.80f)
-            val activeTruck3 = Offset(width * 0.52f, height * 0.15f)
-
-            listOf(activeTruck1, activeTruck2, activeTruck3).forEach { pos ->
-                drawCircle(
-                    color = PrimaryOrange.copy(alpha = 0.10f),
-                    center = pos,
-                    radius = 20.dp.toPx()
-                )
-                drawCircle(
+                // Draw main highway route trunk
+                drawPath(
+                    path = routePath,
                     color = Color.White,
-                    center = pos,
-                    radius = 7.dp.toPx()
+                    style = Stroke(width = 8.dp.toPx(), cap = StrokeCap.Round)
+                )
+                drawPath(
+                    path = routePath,
+                    color = PrimaryOrange.copy(alpha = 0.75f),
+                    style = Stroke(
+                        width = 4.dp.toPx(),
+                        cap = StrokeCap.Round,
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(15f, 15f), 0f)
+                    )
+                )
+
+                // Draw the visual completion trail
+                if (safeProgress > 0.0f) {
+                    try {
+                        val progressPath = Path()
+                        val measure = PathMeasure()
+                        measure.setPath(routePath, false)
+                        val sublength = measure.length * safeProgress
+                        if (sublength > 0f && sublength <= measure.length) {
+                            measure.getSegment(0f, sublength, progressPath, true)
+                            drawPath(
+                                path = progressPath,
+                                color = SuccessGreen,
+                                style = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round)
+                            )
+                        }
+                    } catch (e: Exception) {
+                        // Suppress path segment exceptions in pathological frames
+                    }
+                }
+
+                // Draw pickup depot radius rings
+                drawCircle(
+                    color = PrimaryOrange.copy(alpha = 0.15f),
+                    center = startOffset,
+                    radius = 35.dp.toPx()
                 )
                 drawCircle(
                     color = PrimaryOrange,
-                    center = pos,
-                    radius = 4.dp.toPx()
+                    center = startOffset,
+                    radius = 8.dp.toPx()
                 )
-            }
-        }
 
-        // Draw current tracked truck moving on the bezier route
-        val currentPosition = getOffsetOnCubicBezier(startOffset, bendOffset1, bendOffset2, endOffset, progress)
-        
-        drawCircle(
-            color = if (progress >= 1.0f) SuccessGreen.copy(alpha = 0.2f) else PrimaryOrange.copy(alpha = 0.25f),
-            center = currentPosition,
-            radius = 24.dp.toPx()
-        )
+                // Draw destination pulsing rings
+                val parsedPulse = if (pulseRadius.isNaN() || pulseRadius.isInfinite()) 12f else pulseRadius
+                val prAlpha = (1f - (parsedPulse / 28f)).coerceIn(0f, 0.4f)
+                val safeAlpha = if (prAlpha.isNaN()) 0f else prAlpha
 
-        translate(left = currentPosition.x - 16.dp.toPx(), top = currentPosition.y - 16.dp.toPx()) {
-            with(vectorPainter) {
-                draw(
-                    size = Size(32.dp.toPx(), 32.dp.toPx()),
-                    colorFilter = ColorFilter.tint(if (progress >= 1.0f) SuccessGreen else PrimaryOrange)
+                drawCircle(
+                    color = SuccessGreen.copy(alpha = safeAlpha),
+                    center = endOffset,
+                    radius = parsedPulse * 2.dp.toPx()
                 )
+                drawCircle(
+                    color = SuccessGreen,
+                    center = endOffset,
+                    radius = 8.dp.toPx()
+                )
+
+                // Vector labels for start & end
+                translate(left = startOffset.x - 14.dp.toPx(), top = startOffset.y - 32.dp.toPx()) {
+                    with(startIconPainter) {
+                        draw(size = Size(28.dp.toPx(), 28.dp.toPx()), colorFilter = ColorFilter.tint(PrimaryOrange))
+                    }
+                }
+
+                translate(left = endOffset.x - 10.dp.toPx(), top = endOffset.y - 32.dp.toPx()) {
+                    with(destIconPainter) {
+                        draw(size = Size(26.dp.toPx(), 26.dp.toPx()), colorFilter = ColorFilter.tint(SuccessGreen))
+                    }
+                }
+
+                // Simulated secondary fleet trucks active (geographic clustering)
+                if (showNearbyVehicles) {
+                    val activeTruck1 = Offset(width * 0.30f, height * 0.22f)
+                    val activeTruck2 = Offset(width * 0.75f, height * 0.80f)
+                    val activeTruck3 = Offset(width * 0.52f, height * 0.15f)
+
+                    listOf(activeTruck1, activeTruck2, activeTruck3).forEach { pos ->
+                        drawCircle(
+                            color = PrimaryOrange.copy(alpha = 0.10f),
+                            center = pos,
+                            radius = 20.dp.toPx()
+                        )
+                        drawCircle(
+                            color = Color.White,
+                            center = pos,
+                            radius = 7.dp.toPx()
+                        )
+                        drawCircle(
+                            color = PrimaryOrange,
+                            center = pos,
+                            radius = 4.dp.toPx()
+                        )
+                    }
+                }
+
+                // Draw current tracked truck moving on the bezier route
+                val currentPosition = getOffsetOnCubicBezier(startOffset, bendOffset1, bendOffset2, endOffset, safeProgress)
+                
+                drawCircle(
+                    color = if (safeProgress >= 1.0f) SuccessGreen.copy(alpha = 0.2f) else PrimaryOrange.copy(alpha = 0.25f),
+                    center = currentPosition,
+                    radius = 24.dp.toPx()
+                )
+
+                translate(left = currentPosition.x - 16.dp.toPx(), top = currentPosition.y - 16.dp.toPx()) {
+                    with(vectorPainter) {
+                        draw(
+                            size = Size(32.dp.toPx(), 32.dp.toPx()),
+                            colorFilter = ColorFilter.tint(if (safeProgress >= 1.0f) SuccessGreen else PrimaryOrange)
+                        )
+                    }
+                }
             }
+        } catch (e: Exception) {
+            // Guard system from Canvas runtime crashes
         }
     }
 }
@@ -344,16 +360,20 @@ private fun getOffsetOnCubicBezier(
     end: Offset,
     t: Float
 ): Offset {
-    val mt = 1f - t
+    val safeT = if (t.isNaN() || t.isInfinite()) 0f else t.coerceIn(0f, 1f)
+    val mt = 1f - safeT
     val mt2 = mt * mt
     val mt3 = mt2 * mt
-    val t2 = t * t
-    val t3 = t2 * t
+    val t2 = safeT * safeT
+    val t3 = t2 * safeT
 
-    val x = mt3 * start.x + 3 * mt2 * t * control1.x + 3 * mt * t2 * control2.x + t3 * end.x
-    val y = mt3 * start.y + 3 * mt2 * t * control1.y + 3 * mt * t2 * control2.y + t3 * end.y
+    val x = mt3 * start.x + 3 * mt2 * safeT * control1.x + 3 * mt * t2 * control2.x + t3 * end.x
+    val y = mt3 * start.y + 3 * mt2 * safeT * control1.y + 3 * mt * t2 * control2.y + t3 * end.y
 
-    return Offset(x, y)
+    val safeX = if (x.isNaN() || x.isInfinite()) 0f else x
+    val safeY = if (y.isNaN() || y.isInfinite()) 0f else y
+
+    return Offset(safeX, safeY)
 }
 
 @Composable
@@ -465,26 +485,33 @@ fun SignatureConfirmationCanvas(
                 }
         ) {
             Canvas(modifier = Modifier.fillMaxSize()) {
-                val path = Path()
-                if (points.isNotEmpty()) {
-                    path.moveTo(points.first().x, points.first().y)
-                    for (i in 1 until points.size) {
-                        path.lineTo(points[i].x, points[i].y)
+                try {
+                    val localPoints = points.toList() // Avoid concurrent modifications during clears in draw frames
+                    if (localPoints.isNotEmpty()) {
+                        val path = Path()
+                        val first = localPoints[0]
+                        path.moveTo(first.x, first.y)
+                        for (i in 1 until localPoints.size) {
+                            val pt = localPoints[i]
+                            path.lineTo(pt.x, pt.y)
+                        }
+                        drawPath(
+                            path = path,
+                            color = DarkText,
+                            style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+                        )
+                    } else {
+                        // Draw a subtle baseline signature indicator
+                        drawLine(
+                            color = LightGray.copy(alpha = 0.5f),
+                            start = Offset(40f, size.height - 30f),
+                            end = Offset(size.width - 40f, size.height - 30f),
+                            strokeWidth = 1.dp.toPx(),
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+                        )
                     }
-                    drawPath(
-                        path = path,
-                        color = DarkText,
-                        style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
-                    )
-                } else {
-                    // Draw a subtle baseline signature indicator
-                    drawLine(
-                        color = LightGray.copy(alpha = 0.5f),
-                        start = Offset(40f, size.height - 30f),
-                        end = Offset(size.width - 40f, size.height - 30f),
-                        strokeWidth = 1.dp.toPx(),
-                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
-                    )
+                } catch (e: Exception) {
+                    // Suppress drawing race conditions
                 }
             }
             if (points.isEmpty()) {
@@ -499,3 +526,83 @@ fun SignatureConfirmationCanvas(
         }
     }
 }
+
+private data class QuadData<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
+
+@Composable
+fun FirebaseStatusChip(modifier: Modifier = Modifier) {
+    val isLiveFirebase by com.example.firebase.FirebaseSyncManager.isLiveFirebase.collectAsState()
+    val syncStatus by com.example.firebase.FirebaseSyncManager.syncStatus.collectAsState()
+
+    val data = if (isLiveFirebase) {
+        when (val s = syncStatus) {
+            is com.example.firebase.FirebaseSyncManager.SyncStatus.Syncing -> {
+                QuadData(
+                    Color(0xFFFFFAF0),
+                    PrimaryOrange,
+                    "Syncing...",
+                    Icons.Default.Sync
+                )
+            }
+            is com.example.firebase.FirebaseSyncManager.SyncStatus.Error -> {
+                QuadData(
+                    Color(0xFFFFF0F0),
+                    ErrorRed,
+                    "Sync Failed",
+                    Icons.Default.CloudOff
+                )
+            }
+            else -> {
+                QuadData(
+                    Color(0xFFF0FFF4),
+                    SuccessGreen,
+                    "Firebase Connected",
+                    Icons.Default.CloudDone
+                )
+            }
+        }
+    } else {
+        QuadData(
+            Color(0xFFF7FAFC),
+            GrayText,
+            "Local Sandbox Mode",
+            Icons.Default.CloudOff
+        )
+    }
+
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(data.first)
+            .border(1.dp, data.second.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+            .clickable {
+                // Clicking forces manual diagnostic test log
+                android.util.Log.d("FirebaseSync", "Firebase live status: $isLiveFirebase, Sync status: $syncStatus")
+            }
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        if (syncStatus is com.example.firebase.FirebaseSyncManager.SyncStatus.Syncing) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(12.dp),
+                color = data.second,
+                strokeWidth = 1.5.dp
+            )
+        } else {
+            Icon(
+                imageVector = data.fourth,
+                contentDescription = data.third,
+                tint = data.second,
+                modifier = Modifier.size(13.dp)
+            )
+        }
+        Text(
+            text = data.third,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            color = data.second
+        )
+    }
+}
+

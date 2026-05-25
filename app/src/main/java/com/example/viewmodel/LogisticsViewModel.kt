@@ -2,17 +2,21 @@ package com.example.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.db.LogisticsRepository
+import com.example.db.UserEntity
+import com.example.firebase.FirebaseSyncManager
 import com.example.model.*
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
-class LogisticsViewModel : ViewModel() {
+class LogisticsViewModel(val repository: LogisticsRepository) : ViewModel() {
 
     // Global navigation states
     private val _currentScreen = MutableStateFlow(NavigationScreen.SPLASH)
@@ -21,7 +25,7 @@ class LogisticsViewModel : ViewModel() {
     private val _currentRole = MutableStateFlow(UserRole.CUSTOMER)
     val currentRole: StateFlow<UserRole> = _currentRole.asStateFlow()
 
-    // Authentication mock details
+    // Authentic details
     private val _authEmail = MutableStateFlow("")
     val authEmail: StateFlow<String> = _authEmail.asStateFlow()
 
@@ -99,17 +103,31 @@ class LogisticsViewModel : ViewModel() {
     )
     val fleetInsight: StateFlow<FleetInsight> = _fleetInsight.asStateFlow()
 
-    // Core simulated movement job
     private var trackingJob: Job? = null
+    private var dbCollectionJob: Job? = null
 
     init {
         // Hydrate default realistic assets
         populateMockTrucks()
-        populateMockWallet()
-        populateMockHistory()
-        populateMockFleet()
-        populateMockChat()
         hydrateSimulationRequests()
+        
+        // Let's populate mock fleet vehicles dynamically if they are empty
+        viewModelScope.launch {
+            repository.getAllVehicles().collect { vehicles ->
+                if (vehicles.isEmpty()) {
+                    val defaults = listOf(
+                        FleetVehicle("FL1", "TX-1002-SF", "Bedford Boxster", "Daniel Peterson", 12.5f, 98, "ONLINE", 0),
+                        FleetVehicle("FL2", "TX-9988-CA", "Super Titan Hauler", "Marcus Vance", 34.2f, 85, "ONLINE", 85),
+                        FleetVehicle("FL3", "TX-1144-NV", "Mega Flatbed Steel", "Ahmed Al-Bakary", 28.0f, 92, "ONLINE", 40),
+                        FleetVehicle("FL4", "TX-Reef-88", "ThermoCold Freezer", "Sergei Orlov", 19.8f, 74, "MAINTENANCE", 0),
+                        FleetVehicle("FL5", "TX-8833-OH", "Goliath Iron Trailer", "Unassigned", 42.0f, 60, "OFFLINE", 0)
+                    )
+                    repository.insertVehicles(defaults)
+                } else {
+                    _fleetVehicles.value = vehicles
+                }
+            }
+        }
     }
 
     // Role switcher
@@ -128,10 +146,116 @@ class LogisticsViewModel : ViewModel() {
         _currentScreen.value = screen
     }
 
-    // Authentication helpers
-    fun authenticate(email: String) {
-        _authEmail.value = email
+    // Authenticate / Login User (Supports Database match and custom presets Seeding)
+    fun authenticate(email: String, passwordText: String = "12345", onResult: (Boolean, String) -> Unit = { _, _ -> }) {
+        viewModelScope.launch {
+            val user = repository.getUser(email)
+            if (user != null) {
+                if (user.password == passwordText) {
+                    onLoginSuccess(user)
+                    onResult(true, "Success")
+                } else {
+                    onResult(false, "Invalid network passkey")
+                }
+            } else {
+                // Seeding click-and-run support for preset demo users
+                if (email.contains("@mivo.logistics")) {
+                    val defaultRole = when {
+                        email.contains("shipper") -> UserRole.CUSTOMER
+                        email.contains("vance") || email.contains("driver") -> UserRole.DRIVER
+                        email.contains("fleet") -> UserRole.FLEET_OWNER
+                        email.contains("dispatcher") || email.contains("admin") -> UserRole.DISPATCH_ADMIN
+                        else -> UserRole.CUSTOMER
+                    }
+                    val defaultName = when (defaultRole) {
+                        UserRole.CUSTOMER -> "Enterprise Shipper"
+                        UserRole.DRIVER -> "Marcus Vance"
+                        UserRole.FLEET_OWNER -> "Fleet Operator Nexus"
+                        UserRole.DISPATCH_ADMIN -> "Alpha Dispatcher"
+                    }
+                    val created = UserEntity(email, passwordText.ifBlank { "12345" }, defaultName, defaultRole.name, 12500.00)
+                    repository.insertUser(created)
+                    seedUserInitialMockData(email, defaultRole)
+                    onLoginSuccess(created)
+                    onResult(true, "Success")
+                } else {
+                    onResult(false, "Profile ID not registered. Support register tab!")
+                }
+            }
+        }
+    }
+
+    // Register User with SQLite Persistence Support!
+    fun register(name: String, email: String, passkey: String, role: UserRole, onResult: (Boolean, String) -> Unit) {
+        if (name.isBlank() || email.isBlank() || passkey.isBlank()) {
+            onResult(false, "All parameters are required!")
+            return
+        }
+        viewModelScope.launch {
+            val existing = repository.getUser(email)
+            if (existing != null) {
+                onResult(false, "Email is already registered!")
+            } else {
+                val newUser = UserEntity(
+                    email = email,
+                    password = passkey,
+                    name = name,
+                    role = role.name,
+                    walletBalance = if (role == UserRole.CUSTOMER) 15000.00 else 0.0
+                )
+                repository.insertUser(newUser)
+                seedUserInitialMockData(email, role)
+                onLoginSuccess(newUser)
+                onResult(true, "Account registered successfully!")
+            }
+        }
+    }
+
+    private fun onLoginSuccess(user: UserEntity) {
+        _authEmail.value = user.email
+        _currentRole.value = try {
+            UserRole.valueOf(user.role)
+        } catch (e: Exception) {
+            UserRole.CUSTOMER
+        }
         _isAuthenticated.value = true
+
+        // Bind DB Flows
+        dbCollectionJob?.cancel()
+        dbCollectionJob = viewModelScope.launch {
+            // Flow: Wallet Balance
+            launch {
+                repository.getUserFlow(user.email).collect { curr ->
+                    if (curr != null) {
+                        _walletBalance.value = curr.walletBalance
+                    }
+                }
+            }
+            // Flow: Support Chats
+            launch {
+                repository.getChatForUser(user.email).collect { chats ->
+                    _chatMessages.value = chats
+                }
+            }
+            // Flow: Ledger Payments
+            launch {
+                repository.getTransactionsForUser(user.email).collect { txs ->
+                    _walletTransactions.value = txs
+                }
+            }
+            // Flow: Historic Bookings
+            launch {
+                repository.getBookingsForUser(user.email).collect { bookings ->
+                    _bookingHistory.value = bookings
+                    val active = bookings.firstOrNull { it.status != ShipmentStatus.DELIVERED }
+                    if (active != null) {
+                        _currentBooking.value = active
+                    }
+                }
+            }
+        }
+
+        // Redirect appropriately
         _currentScreen.value = NavigationScreen.DASHBOARD_CUSTOMER
     }
 
@@ -145,22 +269,19 @@ class LogisticsViewModel : ViewModel() {
         _selectedTruck.value = truck
     }
 
-    // Booking trigger
+    // Booking trigger (Saves to Room database first before starting simulations!)
     fun confirmBooking(paymentMethod: String) {
         val truck = _selectedTruck.value ?: _availableTrucks.value.first()
         val weight = cargoWeightKg.value
         val isFragile = fragileToggle.value
         val isPriority = priorityToggle.value
 
-        // Calculate dynamic formula values: Base + weight surcharge + priority surcharge
         val weightSurcharge = (weight * 0.12)
         val priorityMultiplier = if (isPriority) 1.25 else 1.0
         val totalBookingValue = (truck.price + weightSurcharge) * priorityMultiplier
 
-        // Generate Booking Transaction Reference
         val format = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
         val bookingTimeStr = format.format(Date())
-
         val bookingId = "MIVO-TX-${(100000..999999).random()}"
 
         val trackerStatus = ShipmentStatus.BOOKED
@@ -191,30 +312,37 @@ class LogisticsViewModel : ViewModel() {
 
         _currentBooking.value = newBooking
 
-        // Deduct from wallet if wallet selected
-        if (paymentMethod == "Wallet Balance") {
-            _walletBalance.value -= totalBookingValue
-            val transaction = WalletTransaction(
-                id = "WLT-DEB-${(1000..9999).random()}",
-                title = "Shipment #$bookingId Pre-auth",
-                amount = totalBookingValue,
-                type = "DEBIT",
-                date = "Today",
-                reference = bookingId
-            )
-            _walletTransactions.value = listOf(transaction) + _walletTransactions.value
+        // Backup booking to Firebase Database
+        FirebaseSyncManager.syncBooking(_authEmail.value, newBooking)
+
+        viewModelScope.launch {
+            // Save Booking directly to the user's SQL DB profile!
+            repository.insertBooking(_authEmail.value, newBooking)
+
+            // Deduct from wallet if wallet selected
+            if (paymentMethod == "Wallet Balance") {
+                val newBal = _walletBalance.value - totalBookingValue
+                repository.updateWalletBalance(_authEmail.value, newBal)
+                
+                val transaction = WalletTransaction(
+                    id = "WLT-DEB-${(1000..9999).random()}",
+                    title = "Shipment #$bookingId Pre-auth",
+                    amount = totalBookingValue,
+                    type = "DEBIT",
+                    date = "Today",
+                    reference = bookingId
+                )
+                repository.insertTransaction(_authEmail.value, transaction)
+            }
+
+            // Populate driver job board too
+            _driverTripRequests.value = listOf(newBooking) + _driverTripRequests.value
+
+            _currentScreen.value = NavigationScreen.BOOKING_SUCCESS
+
+            // Start route transit simulation
+            startLiveTransitSimulation(newBooking)
         }
-
-        // Add to history
-        _bookingHistory.value = listOf(newBooking) + _bookingHistory.value
-
-        // Start route transit simulation
-        startLiveTransitSimulation(newBooking)
-        
-        // Populate driver job board too
-        _driverTripRequests.value = listOf(newBooking) + _driverTripRequests.value
-
-        _currentScreen.value = NavigationScreen.BOOKING_SUCCESS
     }
 
     private fun startLiveTransitSimulation(booking: Booking) {
@@ -269,12 +397,11 @@ class LogisticsViewModel : ViewModel() {
         }
     }
 
-    private fun updateBookingStatus(status: ShipmentStatus, details: String, location: String) {
+    private suspend fun updateBookingStatus(status: ShipmentStatus, details: String, location: String) {
         val booking = _currentBooking.value ?: return
         val format = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
         val timeStr = format.format(Date())
 
-        // Create updated milestone logs
         val updatedMilestones = booking.milestones.map { milestone ->
             if (milestone.status == status) {
                 ShipmentMilestone(status, "$timeStr - $details", location, true)
@@ -291,6 +418,10 @@ class LogisticsViewModel : ViewModel() {
         )
 
         _currentBooking.value = updatedBooking
+        repository.insertBooking(_authEmail.value, updatedBooking)
+
+        // Sync status updates directly to Firebase database
+        FirebaseSyncManager.syncBooking(_authEmail.value, updatedBooking)
 
         // Send a custom chat update from Driver
         val formatChat = SimpleDateFormat("HH:mm", Locale.getDefault())
@@ -303,7 +434,8 @@ class LogisticsViewModel : ViewModel() {
             timestamp = timeChat,
             isAi = true
         )
-        _chatMessages.value = _chatMessages.value + systemUpdate
+        repository.insertChatMessage(_authEmail.value, systemUpdate)
+        FirebaseSyncManager.syncChatMessage(_authEmail.value, systemUpdate)
     }
 
     // Driver: toggle status
@@ -313,26 +445,29 @@ class LogisticsViewModel : ViewModel() {
 
     // Driver: Accept pending booking
     fun driverAcceptTrip(booking: Booking) {
-        // Toggle booking status and start simulation
         startLiveTransitSimulation(booking)
         _driverTripRequests.value = _driverTripRequests.value.filter { it.id != booking.id }
     }
 
-    // Wallet Interactions
+    // Wallet Interactions (Saves balance dynamically to SQL User profile)
     fun addWalletFunds(amount: Double) {
-        _walletBalance.value += amount
-        val transaction = WalletTransaction(
-            id = "WLT-CRD-${(1000..9999).random()}",
-            title = "Cash deposit (Stripe Premium Gateway)",
-            amount = amount,
-            type = "CREDIT",
-            date = "Today",
-            reference = "MIVO-DEP-${UUID.randomUUID().toString().take(6).uppercase()}"
-        )
-        _walletTransactions.value = listOf(transaction) + _walletTransactions.value
+        viewModelScope.launch {
+            val updatedBal = _walletBalance.value + amount
+            repository.updateWalletBalance(_authEmail.value, updatedBal)
+            
+            val transaction = WalletTransaction(
+                id = "WLT-CRD-${(1000..9999).random()}",
+                title = "Card Refill - Visa Premium Gateway",
+                amount = amount,
+                type = "CREDIT",
+                date = "Today",
+                reference = "MIVO-DEP-${UUID.randomUUID().toString().take(6).uppercase()}"
+            )
+            repository.insertTransaction(_authEmail.value, transaction)
+        }
     }
 
-    // Send chat messages
+    // Send chat messages (Saves to Room database to retain history flawlessly!)
     fun sendUserMessage(text: String) {
         if (text.isBlank()) return
         val formatChat = SimpleDateFormat("HH:mm", Locale.getDefault())
@@ -345,10 +480,12 @@ class LogisticsViewModel : ViewModel() {
             messageText = text,
             timestamp = timeChat
         )
-        _chatMessages.value = _chatMessages.value + userMsg
-
-        // AI automated responsive response triggers
+        
         viewModelScope.launch {
+            repository.insertChatMessage(_authEmail.value, userMsg)
+            FirebaseSyncManager.syncChatMessage(_authEmail.value, userMsg)
+
+            // AI automated responsive response triggers
             delay(1500)
             val aiResponseText = when {
                 text.lowercase(Locale.ROOT).contains("pricing") || text.contains("cost") || text.contains("price") -> {
@@ -378,7 +515,8 @@ class LogisticsViewModel : ViewModel() {
                 timestamp = timeChat,
                 isAi = true
             )
-            _chatMessages.value = _chatMessages.value + aiMsg
+            repository.insertChatMessage(_authEmail.value, aiMsg)
+            FirebaseSyncManager.syncChatMessage(_authEmail.value, aiMsg)
         }
     }
 
@@ -392,31 +530,18 @@ class LogisticsViewModel : ViewModel() {
             Truck("T5", "Sahara Expressway Tanker", TruckType.TANKER, "12,000 kg Capacity", 2200.00, 4.9f, 18, "Zara Larsson", "+1 (555) 0011-88", plateNumber = "TX-TNK-556"),
             Truck("T6", "Mini Urban Bedford Express", TruckType.MINI_TRUCK, "1,500 kg Capacity", 850.00, 4.9f, 5, "Daniel Peterson", "+1 (555) 7529-10", plateNumber = "TX-CITY-01")
         )
-        // Select standard
         _selectedTruck.value = _availableTrucks.value.first()
     }
 
-    private fun populateMockWallet() {
-        _walletTransactions.value = listOf(
-            WalletTransaction("W1", "Card Refill - Visa *1244", 4500.00, "CREDIT", "May 19, 2026", "TXN-880214829"),
-            WalletTransaction("W2", "Weekly Transit payout #6612", 1200.00, "DEBIT", "May 15, 2026", "TXN-001294821"),
-            WalletTransaction("W3", "Referral Cashreward Bonus", 250.00, "CREDIT", "May 10, 2026", "TXN-442891048"),
-            WalletTransaction("W4", "Bulk Steel haul fee #9910", 3500.00, "DEBIT", "May 08, 2026", "TXN-773901844")
-        )
-    }
-
-    private fun populateMockHistory() {
-        val format = SimpleDateFormat("HH:mm", Locale.getDefault())
-        val defaultTime = format.format(Date(System.currentTimeMillis() - 86400000))
-
-        val dummyTruck = Truck("TH-1", "Atlas Mega box", TruckType.CONTAINER, "15k kg", 2400.00, 4.8f, 10, "Roy Rogers", "+1 332", plateNumber = "TX-9988-CA")
-        _bookingHistory.value = listOf(
-            Booking(
+    private suspend fun seedUserInitialMockData(email: String, role: UserRole) {
+        if (role == UserRole.CUSTOMER) {
+            val dummyTruck = Truck("TH-1", "Atlas Mega box", TruckType.CONTAINER, "15k kg", 2400.00, 4.8f, 10, "Roy Rogers", "+1 332", plateNumber = "TX-9988-CA")
+            val historicBooking1 = Booking(
                 id = "MIVO-TX-429810",
                 pickupLocation = "Silicon Valley Depot Suite 4B",
                 destination = "San Francisco Port Terminal 3",
                 date = "Yesterday",
-                time = defaultTime,
+                time = "14:22",
                 selectedTruck = dummyTruck,
                 cargoType = "High-tech Lithium Batteries",
                 weightKg = 8500,
@@ -429,12 +554,12 @@ class LogisticsViewModel : ViewModel() {
                     ShipmentMilestone(ShipmentStatus.BOOKED, "10:15 - Logged", "Hub SB", true),
                     ShipmentMilestone(ShipmentStatus.DELIVERED, "14:22 - Signature captured", "SF Cargo Berth", true)
                 )
-            ),
-            Booking(
+            )
+            val historicBooking2 = Booking(
                 id = "MIVO-TX-109402",
                 pickupLocation = "Dallas Agro Yard A",
                 destination = "Houston Cold Store Warehouse",
-                date = "May 12, 14:10",
+                date = "May 12",
                 time = "Completed",
                 selectedTruck = dummyTruck,
                 cargoType = "Frozen Organic Vegetables",
@@ -449,27 +574,28 @@ class LogisticsViewModel : ViewModel() {
                     ShipmentMilestone(ShipmentStatus.DELIVERED, "16:45 - Biometric checked", "Houston Cold", true)
                 )
             )
-        )
-    }
+            repository.insertBooking(email, historicBooking1)
+            repository.insertBooking(email, historicBooking2)
 
-    private fun populateMockFleet() {
-        _fleetVehicles.value = listOf(
-            FleetVehicle("FL1", "TX-1002-SF", "Bedford Boxster", "Daniel Peterson", 12.5f, 98, "ONLINE", 0),
-            FleetVehicle("FL2", "TX-9988-CA", "Super Titan Hauler", "Marcus Vance", 34.2f, 85, "ONLINE", 85),
-            FleetVehicle("FL3", "TX-1144-NV", "Mega Flatbed Steel", "Ahmed Al-Bakary", 28.0f, 92, "ONLINE", 40),
-            FleetVehicle("FL4", "TX-Reef-88", "ThermoCold Freezer", "Sergei Orlov", 19.8f, 74, "MAINTENANCE", 0),
-            FleetVehicle("FL5", "TX-8833-OH", "Goliath Iron Trailer", "Unassigned", 42.0f, 60, "OFFLINE", 0)
-        )
-    }
+            // Wallet details
+            val tx1 = WalletTransaction("W1", "Card Refill - Visa *1244", 15000.00, "CREDIT", "Today", "TXN-880214829")
+            val tx2 = WalletTransaction("W2", "Initial Promotional Cash reward", 250.00, "CREDIT", "Today", "TXN-442891048")
+            repository.insertTransaction(email, tx1)
+            repository.insertTransaction(email, tx2)
 
-    private fun populateMockChat() {
-        _chatMessages.value = listOf(
-            ChatMessage("1", "Mivo Support", "System AI", "Hello! Welcome to the premium Mivo Enterprise dispatch support. All trips feature real-time AI safety alerts and automated rerouting. Text our agent with any concerns.", "10:30", isAi = true)
-        )
+            val welcomeChat = ChatMessage(
+                id = UUID.randomUUID().toString(),
+                senderName = "Mivo Support Bot",
+                senderRole = "System AI",
+                messageText = "Welcome to Mivo! All sections are fully connected to your personal secure local database. You have matching starting ledger balances. Let's trace your first load shipment!",
+                timestamp = "Just now",
+                isAi = true
+            )
+            repository.insertChatMessage(email, welcomeChat)
+        }
     }
 
     private fun hydrateSimulationRequests() {
-        // Driver start load requests
         val dummyTruck = Truck("TH-1", "Atlas Mega box", TruckType.CONTAINER, "15,000 kg", 2400.0, 4.8f, 10, "Roy Rogers", "+1 332", plateNumber = "TX-9988-CA")
         _driverTripRequests.value = listOf(
             Booking(
